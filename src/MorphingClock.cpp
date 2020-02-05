@@ -11,7 +11,8 @@
 #include <NTPClient.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
-
+#include <TimeLib.h>
+#include <Fonts/TomThumb.h>
 
 #ifdef ESP32
 
@@ -86,6 +87,33 @@ byte prevhh;
 byte prevmm;
 byte prevss;
 
+const char* dayLut[] = {
+  "",
+  "So",
+  "Mo",
+  "Di",
+  "Mi",
+  "Do",
+  "Fr",
+  "Sa"
+};
+
+const char* monthLut[] {
+  "",
+  "Jan",
+  "Feb",
+  "Mrz",
+  "Apr",
+  "Mai",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Okt",
+  "Nov",
+  "Dez"
+};
+
 void display_update_enable(bool is_enable)
 {
 
@@ -117,7 +145,6 @@ void setup() {
   Serial.begin(9600);
   display.begin(16);
   //display.setFastUpdate(false);
-  //display.clearDisplay();
 
   display.fillScreen(display.color565(0, 0, 0));
   digit1.DrawColon(display.color565(0, 0, 255));
@@ -132,12 +159,27 @@ void setup() {
   display_update_enable(true);
 }
 
+void updateDate()  {
+  setTime(ntpClient.getEpochTime());
+  String datestring = "";
+  datestring = datestring + dayLut[weekday()] + " " + String(day()) + ". " + monthLut[month()];
+  Serial.println(datestring);
+  int x = 2; 
+  int y = 0;
+  // display.fillRect(x, y, 64, 6, display.color565(0,0,0));
+  // display.flushDisplay();
+  display.setCursor(x, y);
+  display.setFont(&TomThumb);
+  display.setTextColor(display.color565 (0, 255, 0), display.color565(0,0,0));
+  display.print(datestring);
+}
+
 
 void loop() {
   ntpClient.update();
   unsigned long epoch = ntpClient.getEpochTime();
-
   if (epoch != prevEpoch) {
+    updateDate();
     int hh = ntpClient.getHours();
     int mm = ntpClient.getMinutes();
     int ss = ntpClient.getSeconds();
@@ -155,29 +197,35 @@ void loop() {
       if (ss!=prevss) { 
         int s0 = ss % 10;
         int s1 = ss / 10;
-        if (s0!=digit0.Value()) digit0.Morph(s0);
-        if (s1!=digit1.Value()) digit1.Morph(s1);
-        //ntpClient.PrintTime();
+        digit0.SetValue(s0);
+        digit1.SetValue(s1);
         prevss = ss;
       }
 
       if (mm!=prevmm) {
         int m0 = mm % 10;
         int m1 = mm / 10;
-        if (m0!=digit2.Value()) digit2.Morph(m0);
-        if (m1!=digit3.Value()) digit3.Morph(m1);
+        digit2.SetValue(m0);
+        digit3.SetValue(m1);
         prevmm = mm;
       }
       
       if (hh!=prevhh) {
         int h0 = hh % 10;
         int h1 = hh / 10;
-        if (h0!=digit4.Value()) digit4.Morph(h0);
-        if (h1!=digit5.Value()) digit5.Morph(h1);
+        digit4.SetValue(h0);
+        digit5.SetValue(h1);
         prevhh = hh;
       }
     }
     prevEpoch = epoch;
     Serial.println(ntpClient.getFormattedTime());
   }
+  digit0.Morph();
+  digit1.Morph();
+  digit2.Morph();
+  digit3.Morph();
+  digit4.Morph();
+  digit5.Morph();
+  delay(30); // animation speed
 }
