@@ -6,7 +6,7 @@ enum {sA, sB, sC, sD, sE, sF, sG};
 #define segWidth  segHeight
 #define height    31u
 #define width     63u
-#define _black    0
+#define _black    rgb24(0,0,0)
 
 byte digitBits[] = {
   B11111100, // 0 ABCDEF--
@@ -21,17 +21,7 @@ byte digitBits[] = {
   B11110110, // 9 ABCD_FG-
 };
 
-//byte sunBitmap[] {
-//  B100100100,
-//  B010001000,
-//  B001110000,
-//  B101110100,
-//  B001110000,
-//  B010001000,
-//  B100100100
-//};
-
-Digit::Digit(PxMATRIX* d, byte value, uint16_t xo, uint16_t yo, uint16_t color) {
+Digit::Digit(SMLayerBackground<rgb24, 0U>* d, byte value, uint16_t xo, uint16_t yo, const rgb24& color) {
   _display = d;
   _value = value;
   _oldvalue = 10;
@@ -46,30 +36,46 @@ void Digit::SetValue(byte value) {
   _morphcnt = 0;
 }
 
-void Digit::SetColor(uint16_t color) {
+void Digit::SetColor(const rgb24& color) {
   _color = color;
 }
 
-void Digit::drawPixel(uint16_t x, uint16_t y, uint16_t c)
+void Digit::drawPixel(uint16_t x, uint16_t y, const rgb24& c)
 {
   _display->drawPixel(xOffset + x, height - (y + yOffset), c);
 }
 
-void Digit::drawLine(uint16_t x, uint16_t y, uint16_t x2, uint16_t y2, uint16_t c)
+void Digit::drawLine(uint16_t x, uint16_t y, uint16_t x2, uint16_t y2, const rgb24& c)
 {
   _display->drawLine(xOffset + x, height - (y + yOffset), xOffset + x2, height - (y2 + yOffset), c);
 }
 
-void Digit::drawFillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t c)
+void Digit::drawFillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const rgb24& c)
 {
-  _display->fillRect(xOffset + x, height - (y + yOffset), w,h, c);
+  uint16_t x0 = xOffset + x;
+  uint16_t y0 = height - (y + yOffset);
+  _display->fillRectangle(x0, y0, x0 + w, y0 + w, c);
 }
 
-void Digit::DrawColon(uint16_t c)
+// void Digit::DrawColon()
+// {
+//   // Colon is drawn to the left of this digit
+//   drawPixel(-3, segHeight-2, random(0,65535));
+//   drawPixel(-2, segHeight-2, random(0,65535));
+//   drawPixel(-3, segHeight-1, random(0,65535));
+//   drawPixel(-2, segHeight-1, random(0,65535));
+
+//   drawPixel(-3, segHeight+4, random(0,65535));
+//   drawPixel(-2, segHeight+4, random(0,65535));
+//   drawPixel(-3, segHeight+5, random(0,65535));
+//   drawPixel(-2, segHeight+5, random(0,65535));
+// }
+
+void Digit::DrawColon(const rgb24 &c)
 {
   // Colon is drawn to the left of this digit
   drawFillRect(-3, segHeight-1, 2,2, c);
-  drawFillRect(-3, segHeight+1+3, 2,2, c);
+  drawFillRect(-3, segHeight+5, 2,2, c);
 }
 
 void Digit::drawSeg(byte seg)

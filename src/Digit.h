@@ -3,30 +3,32 @@
 
 #include <Arduino.h>
 
-#include <PxMatrix.h> // https://github.com/2dom/PxMatrix
+#include <SmartMatrix3.h> // https://github.com/2dom/PxMatrix
+#include <FastLED.h>
 
 class Digit {
   
   public:
-    Digit(PxMATRIX* d, byte value, uint16_t xo, uint16_t yo, uint16_t color);
+    Digit(SMLayerBackground<rgb24, 0U>* d, byte value, uint16_t xo, uint16_t yo, const rgb24& color);
     void Draw(byte value);
     void Morph(void);
     void SetValue(byte value);
-    void SetColor(uint16_t color);
-    void DrawColon(uint16_t c);
-    
+    void SetColor(const rgb24 &color);
+    // void DrawColon();
+    void DrawColon(const rgb24 &c);
+
   private:
-    PxMATRIX* _display;
+    SMLayerBackground<rgb24, 0U>* _display;
     byte _oldvalue;
     byte _value;
     byte _morphcnt;
-    uint16_t _color;
+    rgb24 _color;
     uint16_t xOffset;
     uint16_t yOffset;
 
-    void drawPixel(uint16_t x, uint16_t y, uint16_t c);
-    void drawFillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t c);
-    void drawLine(uint16_t x, uint16_t y, uint16_t x2, uint16_t y2, uint16_t c);
+    void drawPixel(uint16_t x, uint16_t y, const rgb24 &c);
+    void drawFillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const rgb24 &c);
+    void drawLine(uint16_t x, uint16_t y, uint16_t x2, uint16_t y2, const rgb24 &c);
     void drawSeg(byte seg);
     void Morph2();
     void Morph3();

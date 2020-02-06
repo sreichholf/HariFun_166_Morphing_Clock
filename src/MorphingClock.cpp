@@ -6,16 +6,41 @@
 // Stephen Denne aka Datacute for DoubleResetDetector
 // Brian Lough aka WitnessMeNow for tutorials on the matrix and WifiManager
 
-//#define double_buffer
-#include <PxMatrix.h>
 #include <NTPClient.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <TimeLib.h>
-#include <Fonts/TomThumb.h>
+// #include <Fonts/TomThumb.h>
+// #include <Fonts/Org_01.h>
+//AsyncElegantOTA
+#include <ESPAsyncWebServer.h>
+#include <AsyncElegantOTA.h>
+#include <Update.h>
+#include <PubSubClient.h>
+#include <WiFiClient.h>
+
+#include <SmartMatrix3.h>
+#include <FastLED.h>
+
+#define COLOR_DEPTH 24                  // This sketch and FastLED uses type `rgb24` directly, COLOR_DEPTH must be 24
+const uint8_t kMatrixWidth = 64;        // known working: 32, 64, 96, 128
+const uint8_t kMatrixHeight = 32;       // known working: 16, 32, 48, 64
+const uint8_t kRefreshDepth = 24;       // known working: 24, 36, 48
+const uint8_t kDmaBufferRows = 4;       // known working: 2-4, use 2 to save memory, more to keep from dropping frames and automatically lowering refresh rate
+const uint8_t kPanelType = SMARTMATRIX_HUB75_32ROW_MOD16SCAN;   // use SMARTMATRIX_HUB75_16ROW_MOD8SCAN for common 16x32 panels
+const uint8_t kMatrixOptions = (SMARTMATRIX_OPTIONS_NONE);      // see http://docs.pixelmatix.com/SmartMatrix for options
+const uint8_t kBackgroundLayerOptions = (SM_BACKGROUND_OPTIONS_NONE);
+//const uint8_t kScrollingLayerOptions = (SM_SCROLLING_OPTIONS_NONE);
+
+SMARTMATRIX_ALLOCATE_BUFFERS(matrix, kMatrixWidth, kMatrixHeight, kRefreshDepth, kDmaBufferRows, kPanelType, kMatrixOptions);
+SMARTMATRIX_ALLOCATE_BACKGROUND_LAYER(backgroundLayer, kMatrixWidth, kMatrixHeight, COLOR_DEPTH, kBackgroundLayerOptions);
+//SMARTMATRIX_ALLOCATE_SCROLLING_LAYER(scrollingLayer, kMatrixWidth, kMatrixHeight, COLOR_DEPTH, kScrollingLayerOptions);
+
+// local includes
+#include <Digit.h>
+
 
 #ifdef ESP32
-
 #define P_LAT 22
 #define P_A 19
 #define P_B 23
@@ -25,11 +50,9 @@
 #define P_OE 2
 hw_timer_t * timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
-
 #endif
 
 #ifdef ESP8266
-
 #include <Ticker.h>
 Ticker display_ticker;
 #define P_LAT 16
@@ -39,151 +62,144 @@ Ticker display_ticker;
 #define P_D 12
 #define P_E 0
 #define P_OE 2
-
 #endif
 // Pins for LED MATRIX
 
-//PxMATRIX display(32,16,P_LAT, P_OE,P_A,P_B,P_C);
-//PxMATRIX display(64,32,P_LAT, P_OE,P_A,P_B,P_C,P_D);
-PxMATRIX display(64,32,P_LAT, P_OE,P_A,P_B,P_C,P_D,P_E);
-
-#ifdef ESP8266
-// ISR for display refresh
-void display_updater()
-{
-  display.display(display_draw_time);
-}
-#endif
-
-// This defines the 'on' time of the display is us. The larger this number,
-// the brighter the display. If too large the ESP will crash
-uint8_t display_draw_time=70; //10-50 is usually fine
-
-#ifdef ESP32
-void IRAM_ATTR display_updater(){
-  // Increment the counter and set the time of ISR
-  portENTER_CRITICAL_ISR(&timerMux);
-  display.display(display_draw_time);
-  portEXIT_CRITICAL_ISR(&timerMux);
-}
-#endif
-
 //=== SEGMENTS ===
-#include "Digit.h"
-Digit digit0(&display, 0, 63 - 1 - 9*1, 8, display.color565(0, 0, 255));
-Digit digit1(&display, 0, 63 - 1 - 9*2, 8, display.color565(0, 0, 255));
-Digit digit2(&display, 0, 63 - 4 - 9*3, 8, display.color565(0, 0, 255));
-Digit digit3(&display, 0, 63 - 4 - 9*4, 8, display.color565(0, 0, 255));
-Digit digit4(&display, 0, 63 - 7 - 9*5, 8, display.color565(0, 0, 255));
-Digit digit5(&display, 0, 63 - 7 - 9*6, 8, display.color565(0, 0, 255));
+rgb24 white(255,255,255);
+rgb24 black(0,0,0);
+rgb24 digitColor = white;
+uint16_t digitYOffset = 13;
+Digit digit0(&backgroundLayer, 0, 63 - 1 - 9*1, digitYOffset, digitColor);
+Digit digit1(&backgroundLayer, 0, 63 - 1 - 9*2, digitYOffset, digitColor);
+Digit digit2(&backgroundLayer, 0, 63 - 4 - 9*3, digitYOffset, digitColor);
+Digit digit3(&backgroundLayer, 0, 63 - 4 - 9*4, digitYOffset, digitColor);
+Digit digit4(&backgroundLayer, 0, 63 - 7 - 9*5, digitYOffset, digitColor);
+Digit digit5(&backgroundLayer, 0, 63 - 7 - 9*6, digitYOffset, digitColor);
+
+AsyncWebServer server(80);
 
 //=== CLOCK ===
 
 WiFiUDP ntpUDP;
 NTPClient ntpClient(ntpUDP, 3600);
 
+WiFiClient wifiClient;
+PubSubClient mqtt(wifiClient);
+
+const char* mqttServer = "penny.fritz.box";
+const int mqttPort = 1883;
+
 unsigned long prevEpoch;
 byte prevhh;
 byte prevmm;
 byte prevss;
 
-const char* dayLut[] = {
-  "",
-  "So",
-  "Mo",
-  "Di",
-  "Mi",
-  "Do",
-  "Fr",
-  "Sa"
-};
-
-const char* monthLut[] {
-  "",
-  "Jan",
-  "Feb",
-  "Mrz",
-  "Apr",
-  "Mai",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Okt",
-  "Nov",
-  "Dez"
-};
-
-void display_update_enable(bool is_enable)
+void clearBackground()
 {
-
-#ifdef ESP8266
-  if (is_enable)
-    display_ticker.attach(0.002, display_updater);
-  else
-    display_ticker.detach();
-#endif
-
-#ifdef ESP32
-  if (is_enable)
-  {
-    timer = timerBegin(0, 80, true);
-    timerAttachInterrupt(timer, &display_updater, true);
-    timerAlarmWrite(timer, 2000, true);
-    timerAlarmEnable(timer);
-  }
-  else
-  {
-    timerDetachInterrupt(timer);
-    timerAlarmDisable(timer);
-  }
-#endif
+  backgroundLayer.fillScreen(black);
 }
 
+void onUpdateProgress(int current, int total) {
+  if (current == 0) {
+    mqtt.publish("morpingclock/state", "updating");
+  }
+  clearBackground();
+  int progress = (float)current / (float)total * 64;
+  backgroundLayer.drawString(0,0, rgb24(255,0,0), "UPDATING...");
+  backgroundLayer.fillRectangle(0, 11, progress, 9, rgb24(255,255,255));
+  backgroundLayer.swapBuffers();
+}
 
 void setup() {
   Serial.begin(9600);
-  display.begin(16);
-  //display.setFastUpdate(false);
+  Serial.println("Starting...");
+  matrix.addLayer(&backgroundLayer);
+  matrix.setRefreshRate(60);
+  matrix.setMaxCalculationCpuPercentage(50);
+  //matrix.addLayer(&scrollingLayer);
+  backgroundLayer.setBrightness(128);
+  matrix.begin();
 
-  display.fillScreen(display.color565(0, 0, 0));
-  digit1.DrawColon(display.color565(0, 0, 255));
-  digit3.DrawColon(display.color565(0, 0, 255));
+  clearBackground();
+  backgroundLayer.setFont(font3x5);
+  backgroundLayer.drawString(0,0, white, "Connecting WiFi");
+  backgroundLayer.swapBuffers();
+
+  Serial.println("Connecting WiFi...");
   WiFi.setAutoConnect(true);
   WiFi.begin("reichholf", "HansAnnemarieStephanDoreen");
-  while ( WiFi.status() != WL_CONNECTED ) {
-    delay ( 500 );
-    Serial.print ( "." );
+  while ( WiFi.status() != WL_CONNECTED ) 
+  {
+    delay (50 );
   }
+  mqtt.setServer(mqttServer, mqttPort);
+
+  clearBackground();
+  backgroundLayer.drawString(0,0, white, "Connecting MQTT");
+  backgroundLayer.swapBuffers();
+  Serial.println("Connecting MQTT...");
+  while (!mqtt.connected()) {
+    mqtt.connect("MorphingClock");
+    delay(50);
+  }
+  mqtt.publish("morpingclock/status", "connected");
+  mqtt.publish("morpingclock/cpu", String(ESP.getCpuFreqMHz()).c_str());
   ntpClient.begin();
-  display_update_enable(true);
+  ntpClient.forceUpdate();
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", "Hi! I am ESP32.");
+  });
+  AsyncElegantOTA.begin(&server);    // Start ElegantOTA
+  server.begin();
+  Serial.println("HTTP server started");
+  Update.onProgress(&onUpdateProgress);
+
+  clearBackground();
+  rgb24 borderCol = white;
+  backgroundLayer.drawRectangle(0,0,63,0, borderCol);
+  backgroundLayer.drawRectangle(0,31,63,31, borderCol);
+  digit1.DrawColon(borderCol);
+  digit3.DrawColon(borderCol);
+  backgroundLayer.swapBuffers(true);
 }
+
+
+char datestring[sizeof("yyyy-mm-dd")];
 
 void updateDate()  {
   setTime(ntpClient.getEpochTime());
-  String datestring = "";
-  datestring = datestring + dayLut[weekday()] + " " + String(day()) + ". " + monthLut[month()];
+  char newDatestring[sizeof("yyyy-mm-dd")];
+  sprintf(newDatestring, "%04i-%02i-%02i", year(), month(), day());
+  if (strcmp(datestring, newDatestring) == 0)
+    return;
+  strcpy(datestring, newDatestring);
   Serial.println(datestring);
-  int x = 2; 
-  int y = 0;
-  // display.fillRect(x, y, 64, 6, display.color565(0,0,0));
-  // display.flushDisplay();
-  display.setCursor(x, y);
-  display.setFont(&TomThumb);
-  display.setTextColor(display.color565 (0, 255, 0), display.color565(0,0,0));
-  display.print(datestring);
+  backgroundLayer.setFont(font3x5);
+  int x = (64-30) / 2;
+  int y = 31-8;
+  backgroundLayer.fillRectangle(x,y, 63, y+5, black);
+  backgroundLayer.drawString(x,y, white, datestring);
 }
 
+void drawVisualSeconds(int seconds) {
+    seconds = seconds == 0 ? 60 : seconds;
+    rgb24 col = seconds == 60 ? white : rgb24(0x44,0xEE,0xFF);
+    backgroundLayer.fillRectangle(2,  0, 2+seconds, 0, col);
+    backgroundLayer.fillRectangle(61-seconds, 31, 61, 31, col);
+}
 
-void loop() {
+void updateClock() {
   ntpClient.update();
   unsigned long epoch = ntpClient.getEpochTime();
   if (epoch != prevEpoch) {
-    updateDate();
     int hh = ntpClient.getHours();
     int mm = ntpClient.getMinutes();
     int ss = ntpClient.getSeconds();
     if (prevEpoch == 0) { // If we didn't have a previous time. Just draw it without morphing.
+      updateDate();
+      drawVisualSeconds(ss);
       digit0.Draw(ss % 10);
       digit1.Draw(ss / 10);
       digit2.Draw(mm % 10);
@@ -194,12 +210,18 @@ void loop() {
     else
     {
       // epoch changes every miliseconds, we only want to draw when digits actually change.
-      if (ss!=prevss) { 
+      if (ss!=prevss) {
+        updateDate();
+        drawVisualSeconds(ss);
         int s0 = ss % 10;
         int s1 = ss / 10;
         digit0.SetValue(s0);
         digit1.SetValue(s1);
+        // digit1.DrawColon(white);
+        // digit3.DrawColon(white);
         prevss = ss;
+        Serial.println(String(ESP.getFreeHeap()).c_str());
+        mqtt.publish("morpingclock/heap", String(ESP.getFreeHeap()).c_str());
       }
 
       if (mm!=prevmm) {
@@ -227,5 +249,13 @@ void loop() {
   digit3.Morph();
   digit4.Morph();
   digit5.Morph();
-  delay(30); // animation speed
+}
+
+void loop() {
+  AsyncElegantOTA.loop();
+  if (Update.isRunning())
+    return;
+  updateClock();
+  backgroundLayer.swapBuffers(true);
+  mqtt.loop();
 }
