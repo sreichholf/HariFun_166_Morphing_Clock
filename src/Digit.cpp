@@ -74,8 +74,8 @@ void Digit::drawFillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const r
 void Digit::DrawColon(const rgb24 &c)
 {
   // Colon is drawn to the left of this digit
-  drawFillRect(-3, segHeight-1, 2,2, c);
-  drawFillRect(-3, segHeight+5, 2,2, c);
+  drawFillRect(-2, segHeight-3, -1,segHeight-2, c);
+  drawFillRect(-2, segHeight+4, -1,segHeight+5, c);
 }
 
 void Digit::drawSeg(byte seg)

@@ -83,6 +83,7 @@ uint16_t getBitmapFontRowAtXY(unsigned char letter, unsigned char y, const bitma
 // order needs to match fontChoices enum
 static const bitmap_font *fontArray[] = {
     &apple3x5,
+    &tomthumbfont4x6,
     &apple5x7,
     &apple6x10,
     &apple8x13,

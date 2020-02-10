@@ -1841,7 +1841,7 @@ static const unsigned short __tomthumb_index__[] = {
 };
 
 	/// bitmap font structure
-const struct bitmap_font tomthumb = {
+const struct bitmap_font tomthumbfont4x6 = {
 	.Width = 4, .Height = 6,
 	.Chars = 203,
 	.Widths = 0,
